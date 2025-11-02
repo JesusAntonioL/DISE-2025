@@ -51,6 +51,7 @@ CAN_RxHeaderTypeDef RxHeader;
 uint8_t TxData[8] = {0x10, 0x34, 0x54, 0x76, 0x98, 0x00, 0x11, 0x22};
 uint8_t RxData[8];
 uint32_t txMailbox;
+uint8_t lock_status;
 CAN_FilterTypeDef sf;
 /* USER CODE END PV */
 
@@ -67,6 +68,7 @@ static void MX_CAN_Init(void);
 /* USER CODE BEGIN 0 */
 
 /* USER CODE END 0 */
+
 
 /**
   * @brief  The application entry point.
@@ -112,22 +114,28 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
 	if (HAL_CAN_GetRxFifoFillLevel(&hcan, CAN_RX_FIFO0) > 0) {
 	  	  // Get the CAN message
 	  	if (HAL_CAN_GetRxMessage(&hcan, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK) {
 	  		// Process the received message
+	  		lock_status = RxData[0];
 	  		printf("CAN ID: %lx\n\r", RxHeader.StdId);
+	  		printf("CAN Size: %lx\n\r", RxHeader.DLC);
+	  		printf("CAN Data: %d\n\r", RxData[0]);
 	  	}
 	  	else{
 	  		//RX DATA NOT WORKING
 	  		printf("HAL NOT OK");
 	  	}
 	}
+	if (lock_status == 1){
+		HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, 0);
+	}
 	else{
-		//CAN NOT WORKING
+		HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, 1);
 	}
 	HAL_Delay(10);
-	HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
   }
   /* USER CODE END 3 */
 }
