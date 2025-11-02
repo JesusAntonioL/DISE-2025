@@ -1,8 +1,8 @@
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 
-const char* ssid = "Totalplay-34AD";
-const char* password = "34AD29AB8545RhVd";
+const char* ssid = "Nintendo Switch de Chuy";
+const char* password = "tacos2x1";
 
 const char* authUser = "admin";
 const char* authPass = "1234";

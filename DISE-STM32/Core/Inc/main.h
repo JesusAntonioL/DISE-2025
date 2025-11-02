@@ -57,6 +57,12 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define STLinkTX_Pin GPIO_PIN_2
+#define STLinkTX_GPIO_Port GPIOA
+#define STLinkTXA3_Pin GPIO_PIN_3
+#define STLinkTXA3_GPIO_Port GPIOA
+#define LED2_Pin GPIO_PIN_5
+#define LED2_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
 
