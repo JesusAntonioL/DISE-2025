@@ -43,6 +43,8 @@
 /* Private variables ---------------------------------------------------------*/
 CAN_HandleTypeDef hcan;
 
+TIM_HandleTypeDef htim2;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -53,6 +55,9 @@ uint8_t RxData[8];
 uint32_t txMailbox;
 uint8_t lock_status;
 CAN_FilterTypeDef sf;
+
+uint8_t lock = 20;
+uint8_t unlock = 110;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -60,15 +65,18 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_CAN_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+void set_servo(TIM_HandleTypeDef *htim, uint32_t channel, uint8_t angle){
+	uint32_t pulse_length = 160 + (angle*(800 - 160)/180);
+	__HAL_TIM_SET_COMPARE(htim, channel, pulse_length);
+}
 /* USER CODE END 0 */
-
 
 /**
   * @brief  The application entry point.
@@ -79,6 +87,7 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -87,6 +96,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+  RetargetInit(&huart2);
 
   /* USER CODE END Init */
 
@@ -101,9 +111,9 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_CAN_Init();
-  RetargetInit(&huart2);
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -131,9 +141,11 @@ int main(void)
 	}
 	if (lock_status == 1){
 		HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, 0);
+		set_servo(&htim2, TIM_CHANNEL_1, lock);
 	}
 	else{
 		HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, 1);
+		set_servo(&htim2, TIM_CHANNEL_1, unlock);
 	}
 	HAL_Delay(10);
   }
@@ -237,6 +249,66 @@ static void MX_CAN_Init(void)
       TxHeader.TransmitGlobalTime = DISABLE;
 }
 
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 200-1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 6400-1;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
+
+}
+
 /**
   * @brief USART2 Initialization Function
   * @param None
@@ -283,6 +355,7 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
