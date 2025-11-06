@@ -22,6 +22,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 #include "myprintf.h"
 /* USER CODE END Includes */
 
@@ -32,7 +34,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define DEBUG_MODE 0 //Set as 0 for non-debug mode, 1 to debug and activate prints for CAN signals
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -55,7 +57,8 @@ uint8_t RxData[8];
 uint32_t txMailbox;
 uint8_t lock_status;
 CAN_FilterTypeDef sf;
-
+int temp;
+int RPMs;
 uint8_t lock = 20;
 uint8_t unlock = 110;
 /* USER CODE END PV */
@@ -66,6 +69,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_CAN_Init(void);
 static void MX_TIM2_Init(void);
+int randomRangeWithDiff(int min, int max, int min_diff);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -76,6 +80,20 @@ void set_servo(TIM_HandleTypeDef *htim, uint32_t channel, uint8_t angle){
 	uint32_t pulse_length = 160 + (angle*(800 - 160)/180);
 	__HAL_TIM_SET_COMPARE(htim, channel, pulse_length);
 }
+
+int randomRangeWithDiff(int min, int max, int min_diff)
+{
+    int last_value = -9999; // initial arbitrary number
+    int new_value;
+
+    do {
+        new_value = (rand() % (max - min + 1)) + min;
+    } while (abs(new_value - last_value) < min_diff);
+
+    last_value = new_value;
+    return new_value;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -97,6 +115,7 @@ int main(void)
 
   /* USER CODE BEGIN Init */
   RetargetInit(&huart2);
+  srand(HAL_GetTick());  // change to seed value
 
   /* USER CODE END Init */
 
@@ -118,7 +137,7 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  printf("First Session Embedded\r\n");
+  printf("DISE Embedded Final Project\r\n");
   while (1)
   {
     /* USER CODE END WHILE */
@@ -130,9 +149,16 @@ int main(void)
 	  	if (HAL_CAN_GetRxMessage(&hcan, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK) {
 	  		// Process the received message
 	  		lock_status = RxData[0];
-	  		printf("CAN ID: %lx\n\r", RxHeader.StdId);
-	  		printf("CAN Size: %lx\n\r", RxHeader.DLC);
-	  		printf("CAN Data: %d\n\r", RxData[0]);
+	  		temp = randomRangeWithDiff(0, 80, 1);
+	  		RPMs = randomRangeWithDiff(0, 250, 10);
+	  		if (DEBUG_MODE == 1){
+	  			printf("CAN ID: %lx\n\r", RxHeader.StdId);
+	  			printf("CAN Size: %lx\n\r", RxHeader.DLC);
+	  			printf("CAN Data: %d\n\r", RxData[0]);
+	  		}
+	  		else {
+	  			printf("\n%d,%d,%d", RPMs, lock_status, temp);
+	  		}
 	  	}
 	  	else{
 	  		//RX DATA NOT WORKING
