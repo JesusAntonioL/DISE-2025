@@ -1,60 +1,79 @@
-// Merged: SketchPhoneUnlock + ESP32 CAN sender (MCP2515)
-// Make sure MCP_CAN library (MCP_CAN.h) is installed.
-
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
-
 #include <mcp_can.h>
 #include <SPI.h>
 
-// ---------- WiFi / Web server (from SketchPhoneUnlock) ----------
-const char* ssid = ""; //Add WIFI Network Name
-const char* password = ""; //Add WIFI Network Password
+// ---------- WiFi Configuration ----------
+//const char* ssid = ""; //Add WIFI Network Name
+//const char* password = ""; //Add WIFI Network Password
 const char* authUser = "admin";
 const char* authPass = "1234";
 
+// ---------- Lock Control ----------
 #define LOCK_PIN 4
 
+// ---------- CAN Configuration ----------
+#define CAN0_INT 5
+#define CAN0_CS  2
+MCP_CAN CAN0(CAN0_CS);
+
+const unsigned long CAN_SEND_INTERVAL = 1000; // periodic send (ms)
+volatile unsigned long lastCanSend = 0;
+bool lockStatus = 1; // 1 = locked, 0 = unlocked
+
+// ---------- Web Server ----------
 AsyncWebServer server(80);
 
+// ---------- Dashboard HTML (unchanged) ----------
 String getDashboardHTML() {
   return R"rawliteral(
   <!DOCTYPE html>
   <html>
-    <head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-    <body>
-      <h1>Unlock</h1>
-      <button onclick="fetch('/unlock')">Unlock</button>
-    </body>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Lock Control</title>
+    <style>
+      body { font-family: Arial; text-align:center; background:#f2f2f2; }
+      button { padding:15px 30px; margin:10px; font-size:20px; border:none; border-radius:10px; cursor:pointer; }
+      .lock { background-color:#e74c3c; color:white; }
+      .unlock { background-color:#2ecc71; color:white; }
+    </style>
+  </head>
+  <body>
+    <h2>ESP32 Lock Dashboard</h2>
+    <button class="lock" onclick="sendCommand('lock')">Lock</button>
+    <button class="unlock" onclick="sendCommand('unlock')">Unlock</button>
+    <br>
+    <button onclick="window.location.href='/logout'">Logout</button>
+    <p id="status"></p>
+    <script>
+      function sendCommand(cmd){
+        fetch('/'+cmd)
+          .then(r => r.text())
+          .then(t => document.getElementById('status').innerText = t)
+          .catch(e => console.error(e));
+      }
+    </script>
+  </body>
   </html>
   )rawliteral";
 }
 
-// ---------- CAN (from ESP32_CAN_Test_Code.ino) ----------
-#define CAN0_INT 5   // interrupt pin from MCP2515 to ESP32
-#define CAN0_CS  2   // CS pin for MCP2515 (change if needed)
-
-MCP_CAN CAN0(CAN0_CS);  // Set CS pin
-
-// CAN send interval (ms)
-const unsigned long CAN_SEND_INTERVAL = 1000;
-
-// ---------- Globals for CAN task ----------
-volatile unsigned long lastCanSend = 0;
-
-// ---------- CAN sending function ----------
+// ---------- CAN Send Function ----------
 void sendCANMessage() {
-  byte data[8] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 };
-  byte sndStat = CAN0.sendMsgBuf(0x200, 0, 8, data); // 0x200 ID, 0 = standard frame
+  // 8-byte data array, first byte = lock status
+  byte data[1] = {lockStatus};
+
+  byte sndStat = CAN0.sendMsgBuf(0x200, 0, 1, data);
   if (sndStat == CAN_OK) {
-    Serial.println("CAN Message Sent Successfully!");
+    Serial.print("CAN Sent | Lock status: ");
+    Serial.println(lockStatus ? "LOCKED" : "UNLOCKED");
   } else {
-    Serial.print("CAN Send Error: ");
-    Serial.println(sndStat);
+    Serial.println("Error Sending CAN Message");
   }
 }
 
-// ---------- FreeRTOS task for CAN sending ----------
+// ---------- FreeRTOS Task for Periodic CAN ----------
 void canTask(void *pvParameters) {
   (void) pvParameters;
   while (true) {
@@ -63,80 +82,71 @@ void canTask(void *pvParameters) {
       sendCANMessage();
       lastCanSend = now;
     }
-    // small delay so the task yields CPU
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(50)); // yield
   }
 }
 
 // ---------- Setup ----------
 void setup() {
   Serial.begin(115200);
-
-  // pins
   pinMode(LOCK_PIN, OUTPUT);
-  digitalWrite(LOCK_PIN, LOW); // locked default
+  digitalWrite(LOCK_PIN, LOW); // start locked
 
-  // ---- Initialize SPI and MCP2515 ----
-  SPI.begin(); // can also pass SCLK, MISO, MOSI pins if you reassign
-  Serial.println("Initializing CAN...");
-  if (CAN0.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ) == CAN_OK) {
+  // ---- CAN Setup ----
+  SPI.begin();
+  Serial.println("Initializing MCP2515...");
+  if (CAN0.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ) == CAN_OK)
     Serial.println("MCP2515 Initialized Successfully!");
-  } else {
+  else
     Serial.println("Error Initializing MCP2515...");
-    // keep going — you may want to handle recover or halt here
-  }
-  CAN0.setMode(MCP_NORMAL); // normal operation
+  CAN0.setMode(MCP_NORMAL);
 
-  // Optional: attach interrupt for receive (not used in this example)
-  // pinMode(CAN0_INT, INPUT);
+  // ---- Start CAN Task ----
+  xTaskCreatePinnedToCore(canTask, "CAN_Task", 4096, NULL, 1, NULL, 1);
 
-  // ---- Start the CAN task ----
-  // Create task pinned to core 1 or 0 as you prefer
-  xTaskCreatePinnedToCore(
-    canTask,            // task function
-    "CAN_Task",         // name
-    4096,               // stack size (bytes)
-    NULL,               // param
-    1,                  // priority
-    NULL,               // handle
-    1                   // core 1
-  );
-
-  // ---- Start WiFi and server (original unlock server) ----
+  // ---- WiFi Setup ----
   WiFi.begin(ssid, password);
   Serial.print("Connecting to WiFi");
-  unsigned long wifiStart = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000) {
-    delay(200);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
     Serial.print(".");
   }
   Serial.println();
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("Connected! IP: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    Serial.println("WiFi not connected (timeout).");
-  }
+  Serial.print("Connected! IP: ");
+  Serial.println(WiFi.localIP());
 
+  // ---- Web Endpoints ----
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (!request->authenticate(authUser, authPass))
+      return request->requestAuthentication();
     request->send(200, "text/html", getDashboardHTML());
   });
 
-  // Unlock endpoint remains the same
+  server.on("/lock", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (!request->authenticate(authUser, authPass))
+      return request->requestAuthentication();
+
+    lockStatus = 1; // update global state
+    sendCANMessage(); // send immediate update
+    request->send(200, "text/plain", "🔒 Locked");
+  });
+
   server.on("/unlock", HTTP_GET, [](AsyncWebServerRequest *request){
     if (!request->authenticate(authUser, authPass))
       return request->requestAuthentication();
 
-    Serial.println("Xdd");
+    lockStatus = 0; // update global state
+    sendCANMessage(); // send immediate update
     request->send(200, "text/plain", "🔓 Unlocked");
-    // optionally reset the lock after a short time:
-    // delay is blocking - avoid here. Could schedule a timer or set millis-based logic.
+  });
+
+  server.on("/logout", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(401, "text/plain", "Logged out");
   });
 
   server.begin();
 }
 
-// main loop must remain non-blocking for AsyncWebServer
 void loop() {
-  // keep empty or use it for very short non-blocking tasks
+  // nothing here; handled by AsyncWebServer and CAN task
 }

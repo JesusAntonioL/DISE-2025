@@ -61,10 +61,15 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define ServoLock_Pin GPIO_PIN_0
 #define ServoLock_GPIO_Port GPIOA
+#define CHANEL_A_Pin GPIO_PIN_1
+#define CHANEL_A_GPIO_Port GPIOA
+#define CHANEL_A_EXTI_IRQn EXTI1_IRQn
 #define STLinkTX_Pin GPIO_PIN_2
 #define STLinkTX_GPIO_Port GPIOA
 #define STLinkTXA3_Pin GPIO_PIN_3
 #define STLinkTXA3_GPIO_Port GPIOA
+#define CHANEL_B_Pin GPIO_PIN_4
+#define CHANEL_B_GPIO_Port GPIOA
 #define LED2_Pin GPIO_PIN_5
 #define LED2_GPIO_Port GPIOA
 

@@ -34,7 +34,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define DEBUG_MODE 0 //Set as 0 for non-debug mode, 1 to debug and activate prints for CAN signals
+#define DEBUG_MODE 1 //Set as 0 for non-debug mode, 1 to debug and activate prints for CAN signals
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,6 +45,7 @@
 /* Private variables ---------------------------------------------------------*/
 CAN_HandleTypeDef hcan;
 
+TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart2;
@@ -53,14 +54,16 @@ UART_HandleTypeDef huart2;
 CAN_TxHeaderTypeDef TxHeader;
 CAN_RxHeaderTypeDef RxHeader;
 uint8_t TxData[8] = {0x10, 0x34, 0x54, 0x76, 0x98, 0x00, 0x11, 0x22};
-uint8_t RxData[8];
+uint8_t RxData[1];
 uint32_t txMailbox;
 uint8_t lock_status;
 CAN_FilterTypeDef sf;
 int temp;
-int RPMs;
+float RPMs;
 uint8_t lock = 20;
 uint8_t unlock = 110;
+uint16_t encoder;
+uint16_t pulsos;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -69,9 +72,9 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_CAN_Init(void);
 static void MX_TIM2_Init(void);
-int randomRangeWithDiff(int min, int max, int min_diff);
+static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
-
+int randomRangeWithDiff(int min, int max, int min_diff);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -131,7 +134,9 @@ int main(void)
   MX_USART2_UART_Init();
   MX_CAN_Init();
   MX_TIM2_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
+  HAL_TIM_Base_Start_IT(&htim1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   /* USER CODE END 2 */
 
@@ -150,14 +155,14 @@ int main(void)
 	  		// Process the received message
 	  		lock_status = RxData[0];
 	  		temp = randomRangeWithDiff(0, 80, 1);
-	  		RPMs = randomRangeWithDiff(0, 250, 10);
 	  		if (DEBUG_MODE == 1){
 	  			printf("CAN ID: %lx\n\r", RxHeader.StdId);
 	  			printf("CAN Size: %lx\n\r", RxHeader.DLC);
 	  			printf("CAN Data: %d\n\r", RxData[0]);
+	  			printf("RPMs: %d\n\r",(int)RPMs);
 	  		}
 	  		else {
-	  			printf("\n%d,%d,%d", RPMs, lock_status, temp);
+	  			printf("\n%d,%d,%d", (int)RPMs, lock_status, temp);
 	  		}
 	  	}
 	  	else{
@@ -248,33 +253,105 @@ static void MX_CAN_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN CAN_Init 2 */
-
-  /* USER CODE END CAN_Init 2 */
   if (HAL_CAN_Start(&hcan) != HAL_OK) {
-        Error_Handler();
-      }
-      sf.FilterBank = 0;
-      sf.FilterMode = CAN_FILTERMODE_IDMASK;
-      sf.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-      sf.FilterIdHigh = 0x0000;
-      sf.FilterIdLow = 0x0000;
-      sf.FilterMaskIdHigh = 0x0000;
-      sf.FilterMaskIdLow = 0x0000;
-      sf.FilterScale = CAN_FILTERSCALE_32BIT;
-      sf.FilterActivation = CAN_FILTER_ENABLE;
-      sf.SlaveStartFilterBank = 15;
+  /* USER CODE END CAN_Init 2 */
+	  Error_Handler();
+	  }
+	  sf.FilterBank = 0;
+	  sf.FilterMode = CAN_FILTERMODE_IDMASK;
+	  sf.FilterFIFOAssignment = CAN_FILTER_FIFO0;
+	  sf.FilterIdHigh = 0x0000;
+	  sf.FilterIdLow = 0x0000;
+	  sf.FilterMaskIdHigh = 0x0000;
+	  sf.FilterMaskIdLow = 0x0000;
+	  sf.FilterScale = CAN_FILTERSCALE_32BIT;
+	  sf.FilterActivation = CAN_FILTER_ENABLE;
+	  sf.SlaveStartFilterBank = 15;
 
-      if (HAL_CAN_ConfigFilter(&hcan, &sf) != HAL_OK) {
-         Error_Handler();
-       }
-      TxHeader.DLC = 8;
-      TxHeader.IDE = CAN_ID_STD;
-      TxHeader.RTR = CAN_RTR_DATA;
-      TxHeader.StdId = 0x030;
-      TxHeader.ExtId = 0x00;
-      TxHeader.TransmitGlobalTime = DISABLE;
+	  if (HAL_CAN_ConfigFilter(&hcan, &sf) != HAL_OK) {
+		  Error_Handler();
+	   }
+	   TxHeader.DLC = 1;
+	   TxHeader.IDE = CAN_ID_STD;
+	   TxHeader.RTR = CAN_RTR_DATA;
+	   TxHeader.StdId = 0x030;
+	   TxHeader.ExtId = 0x00;
+	   TxHeader.TransmitGlobalTime = DISABLE;
 }
 
+/**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 64000-1;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 100-1;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_OC_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_TIMING;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_OC_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim1, &sBreakDeadTimeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+
+}
 
 /**
   * @brief TIM2 Initialization Function
@@ -388,12 +465,28 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin : CHANEL_A_Pin */
+  GPIO_InitStruct.Pin = CHANEL_A_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(CHANEL_A_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : CHANEL_B_Pin */
+  GPIO_InitStruct.Pin = CHANEL_B_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(CHANEL_B_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : LED2_Pin */
   GPIO_InitStruct.Pin = LED2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED2_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -401,7 +494,22 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	UNUSED(GPIO_Pin); /*No se usa el canal*/
+	if (HAL_GPIO_ReadPin(CHANEL_B_GPIO_Port, CHANEL_B_Pin)== GPIO_PIN_SET){
+		encoder+=1.0;
+		pulsos+=1.0;
+	}
+}
 
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+	if (htim->Instance == TIM1)
+	{
+		RPMs = ((encoder/11.0))*(600.0/34.0);
+		encoder = 0.0;
+	}
+}
 /* USER CODE END 4 */
 
 /**
