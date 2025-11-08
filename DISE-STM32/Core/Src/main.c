@@ -34,7 +34,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define DEBUG_MODE 1 //Set as 0 for non-debug mode, 1 to debug and activate prints for CAN signals
+#define DEBUG_MODE 0 //Set as 0 for non-debug mode, 1 to debug and activate prints for CAN signals
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -47,6 +47,7 @@ CAN_HandleTypeDef hcan;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
 
@@ -64,6 +65,7 @@ uint8_t lock = 20;
 uint8_t unlock = 110;
 uint16_t encoder;
 uint16_t pulsos;
+float scalar;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -73,8 +75,10 @@ static void MX_USART2_UART_Init(void);
 static void MX_CAN_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 int randomRangeWithDiff(int min, int max, int min_diff);
+void motor_set_speed(uint8_t duty_percent);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -95,6 +99,14 @@ int randomRangeWithDiff(int min, int max, int min_diff)
 
     last_value = new_value;
     return new_value;
+}
+
+void motor_set_speed(uint8_t duty_percent)
+{
+    if (duty_percent > 100) duty_percent = 100;  // clamp to 100%
+    uint32_t period = __HAL_TIM_GET_AUTORELOAD(&htim3);
+    uint32_t compare = (period * duty_percent) / 100;
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, compare);
 }
 
 /* USER CODE END 0 */
@@ -135,9 +147,13 @@ int main(void)
   MX_CAN_Init();
   MX_TIM2_Init();
   MX_TIM1_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, 0);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -177,7 +193,15 @@ int main(void)
 	else{
 		HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, 1);
 		set_servo(&htim2, TIM_CHANNEL_1, unlock);
+		if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET) {
+			// Button is pressed
+			motor_set_speed(80);  // 60% duty cycle
+		}
+		else {
+			motor_set_speed(0);
+		}
 	}
+
 	HAL_Delay(10);
   }
   /* USER CODE END 3 */
@@ -254,29 +278,30 @@ static void MX_CAN_Init(void)
   }
   /* USER CODE BEGIN CAN_Init 2 */
   if (HAL_CAN_Start(&hcan) != HAL_OK) {
-  /* USER CODE END CAN_Init 2 */
 	  Error_Handler();
-	  }
-	  sf.FilterBank = 0;
-	  sf.FilterMode = CAN_FILTERMODE_IDMASK;
-	  sf.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-	  sf.FilterIdHigh = 0x0000;
-	  sf.FilterIdLow = 0x0000;
-	  sf.FilterMaskIdHigh = 0x0000;
-	  sf.FilterMaskIdLow = 0x0000;
-	  sf.FilterScale = CAN_FILTERSCALE_32BIT;
-	  sf.FilterActivation = CAN_FILTER_ENABLE;
-	  sf.SlaveStartFilterBank = 15;
+	  	  }
+	  	  sf.FilterBank = 0;
+	  	  sf.FilterMode = CAN_FILTERMODE_IDMASK;
+	  	  sf.FilterFIFOAssignment = CAN_FILTER_FIFO0;
+	  	  sf.FilterIdHigh = 0x0000;
+	  	  sf.FilterIdLow = 0x0000;
+	  	  sf.FilterMaskIdHigh = 0x0000;
+	  	  sf.FilterMaskIdLow = 0x0000;
+	  	  sf.FilterScale = CAN_FILTERSCALE_32BIT;
+	  	  sf.FilterActivation = CAN_FILTER_ENABLE;
+	  	  sf.SlaveStartFilterBank = 15;
 
-	  if (HAL_CAN_ConfigFilter(&hcan, &sf) != HAL_OK) {
-		  Error_Handler();
-	   }
-	   TxHeader.DLC = 1;
-	   TxHeader.IDE = CAN_ID_STD;
-	   TxHeader.RTR = CAN_RTR_DATA;
-	   TxHeader.StdId = 0x030;
-	   TxHeader.ExtId = 0x00;
-	   TxHeader.TransmitGlobalTime = DISABLE;
+	  	  if (HAL_CAN_ConfigFilter(&hcan, &sf) != HAL_OK) {
+	  		  Error_Handler();
+	  	   }
+	  	   TxHeader.DLC = 1;
+	  	   TxHeader.IDE = CAN_ID_STD;
+	  	   TxHeader.RTR = CAN_RTR_DATA;
+	  	   TxHeader.StdId = 0x030;
+	  	   TxHeader.ExtId = 0x00;
+	  	   TxHeader.TransmitGlobalTime = DISABLE;
+  /* USER CODE END CAN_Init 2 */
+
 }
 
 /**
@@ -413,6 +438,65 @@ static void MX_TIM2_Init(void)
 }
 
 /**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 550-1;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 9000-1;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+  HAL_TIM_MspPostInit(&htim3);
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -458,12 +542,22 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6|GPIO_PIN_8, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : PC13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : CHANEL_A_Pin */
   GPIO_InitStruct.Pin = CHANEL_A_Pin;
@@ -483,6 +577,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED2_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PC6 PC8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI1_IRQn, 0, 0);
